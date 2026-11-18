@@ -1,0 +1,44 @@
+# קובץ: grover_search.nx
+import Oracle_101 from nexus.oracles  # נניח שאנחנו מחפשים את המצב |101>
+
+# הגדרת רצפי שערים לשימוש בדיפוזיה
+alias H = Hadamard.
+alias X = PauliX.
+alias MCX = MultiControlledX.
+
+layer_setup = H -> X.
+layer_cleanup = X -> H.
+
+algo:
+diffusion(q_reg) {
+    # 1. הפעלת השכבה הראשונה על כל האוגר
+    q_reg(layer_setup).
+    
+    # 2. שימוש בקיוביט עזר (שמתנקה אוטומטית!) כדי לבצע היפוך סביב הממוצע
+    q_temp(help).
+    X(q_temp).
+    H(q_temp).
+    
+    # כל הקיוביטים באוגר שולטים יחד על קיוביט העזר
+    q_reg.q_temp(MCX). 
+    
+    # 3. הפעלת שכבת הניקוי
+    q_reg(layer_cleanup).
+}
+
+algo:
+main_grover(q_sys) {
+    # אתחול כל המערכת לסופרפוזיציה
+    H(q_sys).
+    
+    # לולאת גרובר (עבור 3 קיוביטים, צריך בערך 2 חזרות)
+    loop(2): {
+        q_sys(Oracle_101).
+        q_sys(diffusion).
+    }
+}
+
+# --- הרצה ---
+my_qubits = qubits(3, state=0, protect="Surface").
+main_grover(my_qubits) -> run(1000, "IBM_Brisbane") -> results.
+
