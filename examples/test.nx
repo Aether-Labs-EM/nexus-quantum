@@ -1,0 +1,3 @@
+my_qubits = qubits(2, protect="Surface").
+H(my_qubits[0]).
+q_res -> out.

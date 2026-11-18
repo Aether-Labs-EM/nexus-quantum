@@ -3,24 +3,21 @@
 # Compiler: Vector 1.0
 # ==========================================
 
-algo:
-hello_quantum(q1, q2) {
-    # הגדרת עומק מקסימלי למעגל
-    P = 2.
-    
+algo hello_quantum(q1, q2) {
     # 1. מכניסים את הקיוביט הראשון לסופרפוזיציה
     H(q1).
     
     # 2. שוזרים את הקיוביט השני לראשון 
-    # (q1 שולט ב-q2)
     q1.q2(CNOT).
 }
 
 # --- התוכנית הראשית ---
 
 # אתחול זוג קיוביטים מוגנים מפני רעש
-my_qubits = qubits(2, state=0, protect="Surface").
+my_qubits = qubits(2, protect="Surface").
 
-# הרצת הפייפליין: אלגוריתם -> מעבד -> תוצאה!
-hello_quantum(my_qubits[0], my_qubits[1]) -> run(1000, "IBM_Brisbane") -> results.
+# הרצת האלגוריתם שלנו על הקיוביטים שהקצינו
+hello_quantum(my_qubits[0], my_qubits[1]).
 
+# שליחת התוצאה למדידה
+my_qubits -> out.

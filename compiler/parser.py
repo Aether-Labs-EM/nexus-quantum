@@ -1,37 +1,21 @@
 # compiler/parser.py
 
-# ==========================================
-# Vector Compiler 1.0 - Parser (AST Builder)
-# ==========================================
-
-# --- מבני הנתונים של העץ הלוגי (AST Nodes) ---
-
 class AllocationOp:
     def __init__(self, var_name, count, kwargs):
-        self.var_name = var_name
-        self.count = count
-        self.kwargs = kwargs # פרמטרים כמו state או protect
-        
-    def __repr__(self):
-        return f"Allocation(Var='{self.var_name}', Count={self.count}, Options={self.kwargs})"
+        self.var_name = var_name; self.count = count; self.kwargs = kwargs
 
 class GateOp:
-    def __init__(self, gate_name, target):
+    def __init__(self, gate_name, targets):
         self.gate_name = gate_name
-        self.target = target
-        
-    def __repr__(self):
-        return f"GateOperation(Gate='{self.gate_name}', Target='{self.target}')"
+        self.targets = targets
 
 class FlowOp:
     def __init__(self, source, destination):
-        self.source = source
-        self.destination = destination
-        
-    def __repr__(self):
-        return f"FlowOperation(Source='{self.source}', Destination='{self.destination}')"
+        self.source = source; self.destination = destination
 
-# --- המנתח התחבירי (The Parser) ---
+class AlgoOp:
+    def __init__(self, name, params, body):
+        self.name = name; self.params = params; self.body = body
 
 class VectorParser:
     def __init__(self, tokens):
@@ -50,6 +34,15 @@ class VectorParser:
             return token
         raise SyntaxError(f"Vector Syntax Error: Expected {expected_type} but got {token.type if token else 'EOF'}")
 
+    def parse_target(self):
+        target = self.consume('IDENTIFIER').value
+        if self.current_token() and self.current_token().type == 'LBRACKET':
+            self.consume('LBRACKET')
+            index = self.consume('NUMBER').value
+            self.consume('RBRACKET')
+            target = f"{target}[{index}]"
+        return target
+
     def parse(self):
         statements = []
         while self.current_token() is not None:
@@ -59,73 +52,101 @@ class VectorParser:
     def parse_statement(self):
         token = self.current_token()
         
-        # 1. זיהוי פעולת זרימה (Flow): q_res -> out.
-        if self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].type == 'ARROW':
-            source = self.consume('IDENTIFIER').value
-            self.consume('ARROW')
-            dest_token = self.current_token()
-            if dest_token.type in ('KEYWORD', 'IDENTIFIER'):
-                destination = self.consume(dest_token.type).value
-            else:
-                raise SyntaxError("Invalid flow destination")
-            self.consume('DOT')
-            return FlowOp(source, destination)
+        # 1. זיהוי בלוק אלגוריתם
+        if token.type == 'KEYWORD' and token.value == 'algo':
+            self.consume('KEYWORD')
+            name = self.consume('IDENTIFIER').value
+            self.consume('LPAREN')
+            params = []
             
-        # 2. זיהוי הקצאת משתנים: my_qubits = qubits(2, protect="Surface").
+            if self.current_token().type == 'IDENTIFIER':
+                params.append(self.consume('IDENTIFIER').value)
+                while self.current_token() and self.current_token().type == 'COMMA':
+                    self.consume('COMMA')
+                    params.append(self.consume('IDENTIFIER').value)
+                    
+            self.consume('RPAREN')
+            self.consume('LBRACE')
+            
+            body = [] 
+            while self.current_token() and self.current_token().type != 'RBRACE':
+                body.append(self.parse_statement())
+            self.consume('RBRACE')
+            return AlgoOp(name, params, body)
+
+        # 2. זיהוי הקצאה
         if token.type == 'IDENTIFIER' and self.pos + 1 < len(self.tokens) and self.tokens[self.pos + 1].type == 'EQUALS':
             var_name = self.consume('IDENTIFIER').value
             self.consume('EQUALS')
-            
-            alloc_token = self.current_token()
-            if alloc_token.type == 'KEYWORD' and alloc_token.value in ['qubit', 'qubits']:
+            if self.current_token().value in ['qubit', 'qubits']:
                 self.consume('KEYWORD')
                 self.consume('LPAREN')
                 count = self.consume('NUMBER').value
-                
                 kwargs = {}
-                # קריאת כל הפרמטרים הנוספים המופרדים בפסיק
                 while self.current_token() and self.current_token().type == 'COMMA':
                     self.consume('COMMA')
                     key = self.consume('IDENTIFIER').value
                     self.consume('EQUALS')
-                    val_token = self.current_token()
-                    if val_token.type in ('NUMBER', 'STRING'):
-                        kwargs[key] = val_token.value.strip('"') # מסירים מרכאות ממחרוזות
-                        self.consume(val_token.type)
-                    else:
-                        raise SyntaxError(f"Invalid value for parameter {key}")
-                        
+                    val_tok = self.current_token()
+                    kwargs[key] = val_tok.value.strip('"')
+                    self.consume(val_tok.type)
                 self.consume('RPAREN')
                 self.consume('DOT')
                 return AllocationOp(var_name, count, kwargs)
-            
-        # 3. זיהוי הפעלת שער קוונטי: H(q1).
+                
+        # 3. זיהוי זרימת נתונים (Flow)
         if token.type == 'IDENTIFIER':
-            gate_name = self.consume('IDENTIFIER').value
-            self.consume('LPAREN')
-            target = self.consume('IDENTIFIER').value
-            self.consume('RPAREN')
-            self.consume('DOT')
-            return GateOp(gate_name, target)
+            temp_pos = self.pos
+            try:
+                self.parse_target()
+                if self.current_token() and self.current_token().type == 'ARROW':
+                    self.pos = temp_pos
+                    source = self.parse_target()
+                    self.consume('ARROW')
+                    dest = self.consume(self.current_token().type).value
+                    self.consume('DOT')
+                    return FlowOp(source, dest)
+            except:
+                pass
+            self.pos = temp_pos
 
-# ==========================================
-# Test the Parser
-# ==========================================
-if __name__ == "__main__":
-    from lexer import VectorLexer
-    
-    test_code = """
-    my_qubits = qubits(2, state=0, protect="Surface").
-    H(q1).
-    q_res -> out.
-    """
-    
-    lexer = VectorLexer()
-    tokens = lexer.tokenize(test_code)
-    
-    parser = VectorParser(tokens)
-    ast_tree = parser.parse()
-    
-    print("Abstract Syntax Tree (AST):")
-    for node in ast_tree:
-        print(f"- {node}")
+        # 4. זיהוי שערים או קריאה לאלגוריתם (Gate/Call)
+        if token.type == 'IDENTIFIER':
+            next_tok = self.tokens[self.pos + 1] if self.pos + 1 < len(self.tokens) else None
+            
+            # שער בודד או קריאה לפונקציה: H(q1). או hello_quantum(q1, q2).
+            if next_tok and next_tok.type == 'LPAREN':
+                gate = self.consume('IDENTIFIER').value
+                self.consume('LPAREN')
+                
+                targets = []
+                if self.current_token().type == 'IDENTIFIER':
+                    targets.append(self.parse_target())
+                    while self.current_token() and self.current_token().type == 'COMMA':
+                        self.consume('COMMA')
+                        targets.append(self.parse_target())
+                        
+                self.consume('RPAREN')
+                self.consume('DOT')
+                return GateOp(gate, targets)
+                
+            # שער משורשר (מותנה): q1.q2(CNOT).# שער משורשר (מותנה): q1.q2(CNOT).
+            else:
+                targets = []
+                targets.append(self.parse_target())
+                
+                # כל עוד יש נקודה, תמשיך לאסוף קיוביטים!
+                while self.current_token() and self.current_token().type == 'DOT':
+                    self.consume('DOT')
+                    
+                    if self.current_token().type == 'NUMBER':
+                        raise SyntaxError(f"Nexus Syntax Error: Expected a qubit name after the dot, but got '{self.current_token().value}'.")
+                    
+                    targets.append(self.parse_target())
+                    
+                self.consume('LPAREN')
+                gate = self.consume('IDENTIFIER').value
+                self.consume('RPAREN')
+                self.consume('DOT')
+                return GateOp(gate, targets)
+        raise SyntaxError(f"Vector Syntax Error: I don't know how to parse '{token.value}' yet!")
