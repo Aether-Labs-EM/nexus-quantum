@@ -21,8 +21,11 @@ class VectorTranspiler:
             node_type = type(node).__name__
             
             if node_type == "AlgoOp":
-                self.qasm_code.append(f"// --- Algorithm: {node.name} ---")
-                self._generate_nodes(node.body) # קורא לעצמו כדי לתרגם את תוכן הבלוק!
+                # כאן התיקון! עוטפים את האלגוריתם כ-gate תקני של QASM
+                params_str = ", ".join(node.params)
+                self.qasm_code.append(f"gate {node.name} {params_str} {{")
+                self._generate_nodes(node.body)
+                self.qasm_code.append("}")
                 
             elif node_type == "AllocationOp":
                 self.qasm_code.append(f"qubit[{node.count}] {node.var_name};")
@@ -31,8 +34,8 @@ class VectorTranspiler:
                     
             elif node_type == "GateOp":
                 qasm_gate = self.gate_map.get(node.gate_name, node.gate_name.lower())
-                targets_str = ", ".join(node.targets) # מחבר את המטרות עם פסיק עבור QASM
-                self.qasm_code.append(f"{qasm_gate} {targets_str};")
+                targets_str = ", ".join(node.targets)
+                self.qasm_code.append(f"  {qasm_gate} {targets_str};")
                 
             elif node_type == "FlowOp":
                 if node.destination == "out":
